@@ -10,6 +10,7 @@ interface ExpenseCreationPopupProps {
   onSubmit: (expenseData: any) => void;
 }
 
+
 const ExpenseCreationPopup: React.FC<ExpenseCreationPopupProps> = ({
   onClose,
   onSubmit,
@@ -18,6 +19,8 @@ const ExpenseCreationPopup: React.FC<ExpenseCreationPopupProps> = ({
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(
     null
   );
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+
   const [description, setDescription] = useState<string>(""); // Description
   const [unitPrice, setUnitPrice] = useState<string>(""); // Prix unitaire formaté
   const [quantity, setQuantity] = useState<number | "">("");
@@ -45,6 +48,12 @@ const ExpenseCreationPopup: React.FC<ExpenseCreationPopupProps> = ({
     fetchProjects();
   }, []);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setInvoiceFile(file);
+  };
+  
+
   // Fonction pour formater les nombres au format "0 000 000"
   const formatCurrencyInput = (value: string): string => {
     const numericValue = value.replace(/\s/g, ""); // Supprime les espaces existants
@@ -66,37 +75,59 @@ const ExpenseCreationPopup: React.FC<ExpenseCreationPopupProps> = ({
 
   // Gestion de la description limitée à 50 caractères
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.slice(0, 50); // Limite à 50 caractères
+    const value = e.target.value.slice(0, 30); // Limite à 30 caractères
     setDescription(value);
+  
+    // Validation en direct pour mise à jour des erreurs
+    if (value.trim().length === 0 || value.trim().length > 30) {
+      setErrors((prev) => ({ ...prev, description: true }));
+    } else {
+      setErrors((prev) => ({ ...prev, description: false }));
+    }
   };
-
+  
   const validateFields = () => {
     const newErrors = {
       selectedProjectId: selectedProjectId === null,
-      description: description.trim() === "",
+      description: description.trim().length < 1 || description.trim().length > 30,
       unitPrice: unitPrice === "" || parseCurrencyInput(unitPrice) <= 0,
       quantity: quantity === "" || quantity <= 0,
     };
     setErrors(newErrors);
-
+  
     return !Object.values(newErrors).includes(true);
   };
 
   const handleSubmit = () => {
     if (validateFields()) {
-      const numericUnitPrice = parseCurrencyInput(unitPrice); // Convertir le prix unitaire en valeur brute
+      const numericUnitPrice = parseCurrencyInput(unitPrice);
       const totalAmount = numericUnitPrice * Number(quantity);
-      const expenseData = {
+  
+      const formData = new FormData();
+      formData.append("projectId", String(selectedProjectId));
+      formData.append("description", description.trim());
+      formData.append("unitPrice", numericUnitPrice.toString());
+      formData.append("quantity", quantity.toString());
+      formData.append("total", totalAmount.toString());
+  
+      if (invoiceFile) {
+        formData.append("invoiceFile", invoiceFile); // Inclure le fichier si présent
+      }
+  
+      console.log("Data sent to backend:", {
         projectId: selectedProjectId,
-        description,
+        description: description.trim(),
         unitPrice: numericUnitPrice,
-        quantity: Number(quantity),
+        quantity: quantity,
         total: totalAmount,
-      };
-      onSubmit(expenseData);
+      });
+  
+      onSubmit(formData);
       onClose();
     }
   };
+  
+  
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
@@ -131,22 +162,23 @@ const ExpenseCreationPopup: React.FC<ExpenseCreationPopupProps> = ({
 
         {/* Description */}
         <div className="mb-4">
-          <label className="block mb-2 text-gray-700">Description</label>
-          <input
-            type="text"
-            className={`w-full border rounded p-2 ${
-              errors.description ? "bg-red-100 border-red-500" : "border-gray-300"
-            }`}
-            value={description}
-            onChange={handleDescriptionChange}
-            placeholder="Entrez une description (max 50 caractères)"
-          />
-          {errors.description && (
-            <p className="text-red-500 text-sm mt-2">
-              Veuillez renseigner une description valide.
-            </p>
-          )}
-        </div>
+  <label className="block mb-2 text-gray-700">Description</label>
+  <input
+    type="text"
+    className={`w-full border rounded p-2 ${
+      errors.description ? "bg-red-100 border-red-500" : "border-gray-300"
+    }`}
+    value={description}
+    onChange={handleDescriptionChange}
+    placeholder="Entrez une description (1-30 caractères)"
+  />
+  {errors.description && (
+    <p className="text-red-500 text-sm mt-2">
+      La description est obligatoire (1-30 caractères).
+    </p>
+  )}
+</div>
+
 
         {/* Saisie du prix unitaire */}
         <div className="mb-4">
@@ -191,6 +223,16 @@ const ExpenseCreationPopup: React.FC<ExpenseCreationPopupProps> = ({
             </p>
           )}
         </div>
+        <div className="mb-4">
+  <label className="block mb-2 text-gray-700">Facture (PDF ou image)</label>
+  <input
+    type="file"
+    accept=".pdf, image/*"
+    className="w-full border rounded p-2 border-gray-300"
+    onChange={handleFileChange}
+  />
+</div>
+
 
         {/* Total */}
         <div className="mb-4">

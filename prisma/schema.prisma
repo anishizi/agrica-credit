@@ -86,9 +86,11 @@ model Expense {
   quantity    Int       // Quantité
   total       Float     // Total (calculé comme unitPrice * quantity)
   createdAt   DateTime  @default(now()) // Date de création de la dépense
+  invoiceFile String?   // Chemin local ou URL du fichier de facture (facultatif)
 
   project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
+
 
 model Game {
   id          Int           @id @default(autoincrement())

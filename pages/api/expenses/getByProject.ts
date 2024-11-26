@@ -30,6 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         quantity: true,
         total: true,
         createdAt: true,
+        invoiceFile: true, // Inclure le chemin du fichier de facture
       },
     });
 

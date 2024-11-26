@@ -16,10 +16,11 @@ interface Expense {
   quantity: number;
   total: number;
   createdAt: string;
+  invoiceFile?: string; // URL ou chemin du fichier facture
 }
 
 const DepensePage: React.FC = () => {
-  const router = useRouter(); // Pour récupérer le projectId de l'URL
+  const router = useRouter();
   const [showPopup, setShowPopup] = useState(false);
   const [notification, setNotification] = useState<{
     message: string;
@@ -29,6 +30,7 @@ const DepensePage: React.FC = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
+  const [selectedInvoiceFile, setSelectedInvoiceFile] = useState<string | null>(null);
 
   // Charger les projets
   useEffect(() => {
@@ -104,12 +106,10 @@ const DepensePage: React.FC = () => {
     try {
       const response = await fetch("/api/expenses/create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(expenseData),
+        body: expenseData, // FormData avec fichier inclus
       });
 
       if (response.ok) {
-        const result = await response.json();
         setNotification({
           message: "Dépense créée avec succès.",
           type: "success",
@@ -139,7 +139,7 @@ const DepensePage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-4">
+    <div className="container mx-auto px-2 py-2">
       {/* Bouton flottant pour ajouter une dépense */}
       <div className="fixed top-2 right-2 z-50">
         <button
@@ -178,30 +178,52 @@ const DepensePage: React.FC = () => {
           {loadingExpenses ? (
             <p>Chargement des dépenses...</p>
           ) : expenses.length > 0 ? (
-            <table className="table-auto w-full border-collapse border border-gray-200 text-sm">
-              <thead>
-                <tr className="bg-gray-100 text-left">
-                  <th className="border border-gray-200 px-4 py-2">Description</th>
-                  <th className="border border-gray-200 px-4 py-2">PU</th>
-                  <th className="border border-gray-200 px-4 py-2">Qt</th>
-                  <th className="border border-gray-200 px-4 py-2">Total (TND)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map((expense) => (
-                  <tr key={expense.id}>
-                    <td className="border border-gray-200 px-4 py-2">{expense.description}</td>
-                    <td className="border border-gray-200 px-4 py-2">
-                      {formatCurrency(expense.unitPrice)}
-                    </td>
-                    <td className="border border-gray-200 px-4 py-2">{expense.quantity}</td>
-                    <td className="border border-gray-200 px-4 py-2">
-                      {formatCurrency(expense.total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+  <table className="table-auto w-full border-collapse border border-gray-200 text-sm">
+    <thead>
+      <tr className="bg-gray-100 text-left">
+        <th className="border border-gray-200 px-2 py-2">Description</th>
+        <th className="border border-gray-200 px-2 py-2 text-right">PU</th>
+        <th className="border border-gray-200 px-2 py-2 text-right">Qt</th>
+        <th className="border border-gray-200 px-2 py-2 text-right">Total (TND)</th>
+      </tr>
+    </thead>
+    <tbody>
+  {expenses.map((expense) => (
+    <tr key={expense.id}>
+      {/* Description */}
+      <td className="border border-gray-200 px-2 py-2 text-center">
+        {expense.invoiceFile ? (
+          <button
+            onClick={() => setSelectedInvoiceFile(expense.invoiceFile || null)}
+            className="text-blue-500 underline hover:text-blue-700"
+          >
+            {expense.description}
+          </button>
+        ) : (
+          <span>{expense.description}</span>
+        )}
+      </td>
+
+      {/* Prix unitaire */}
+      <td className="border border-gray-200 px-2 py-2 text-right whitespace-nowrap">
+        {formatCurrency(expense.unitPrice)}
+      </td>
+
+      {/* Quantité */}
+      <td className="border border-gray-200 px-2 py-2 text-right">{expense.quantity}</td>
+
+      {/* Total */}
+      <td className="border border-gray-200 px-2 py-2 text-right whitespace-nowrap">
+        {formatCurrency(expense.total)}
+      </td>
+    </tr>
+  ))}
+</tbody>
+
+  </table>
+</div>
+
           ) : (
             <p className="text-gray-500">Ce projet n'a pas de dépense.</p>
           )}
@@ -217,6 +239,36 @@ const DepensePage: React.FC = () => {
           )}
         </div>
       )}
+
+     {/* Popup pour afficher une facture */ }
+     {selectedInvoiceFile && (
+  <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50">
+    <div className="relative bg-white rounded-lg shadow-lg p-4 w-full max-w-5xl h-[90%] overflow-auto">
+      <button
+        className="absolute top-4 right-4 bg-gray-100 rounded-full p-2 hover:bg-gray-200"
+        onClick={() => setSelectedInvoiceFile(null)}
+        aria-label="Fermer"
+      >
+        ✖
+      </button>
+      {selectedInvoiceFile.endsWith(".pdf") ? (
+        <embed
+          src={selectedInvoiceFile}
+          type="application/pdf"
+          className="w-full h-full"
+        />
+      ) : (
+        <img
+          src={selectedInvoiceFile}
+          alt="Aperçu de la facture"
+          className="w-full h-auto object-contain"
+        />
+      )}
+    </div>
+  </div>
+)}
+
+
 
       {/* Popup pour créer une dépense */}
       {showPopup && (

@@ -1,50 +1,118 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { PrismaClient } from "@prisma/client";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
+import nextConnect from "next-connect";
 
 const prisma = new PrismaClient();
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "PUT") {
-    return res.status(405).json({ error: "Méthode non autorisée" });
-  }
+// Répertoire pour stocker les fichiers
+const uploadDir = "./public/uploads";
 
-  const { id, description, unitPrice, quantity } = req.body;
+// Créer le répertoire d'uploads s'il n'existe pas
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-  // Validation des données
-  if (!id || !description || !unitPrice || !quantity) {
-    return res.status(400).json({ error: "Tous les champs sont obligatoires." });
-  }
+// Configuration de Multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir); // Répertoire de destination
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}_${file.originalname}`;
+    cb(null, uniqueSuffix); // Renommage des fichiers
+  },
+});
 
-  if (typeof description !== "string" || description.trim().length === 0 || description.trim().length > 50) {
-    return res.status(400).json({
-      error: "La description est obligatoire et doit contenir au maximum 50 caractères.",
-    });
-  }
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // Limite de taille de fichier : 5 Mo
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/") || file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new Error("Type de fichier non supporté."));
+    }
+  },
+});
 
-  if (typeof unitPrice !== "number" || unitPrice <= 0) {
-    return res.status(400).json({
-      error: "Le prix unitaire doit être un nombre valide supérieur à 0.",
-    });
-  }
+// Middleware avec next-connect
+const apiRoute = nextConnect({
+  onError(error, req, res: NextApiResponse) {
+    res.status(500).json({ error: error.message });
+  },
+  onNoMatch(req, res: NextApiResponse) {
+    res.status(405).json({ error: "Méthode non autorisée." });
+  },
+}).use(upload.single("invoiceFile")); // Champ attendu pour le fichier
 
-  if (typeof quantity !== "number" || quantity <= 0) {
-    return res.status(400).json({
-      error: "La quantité doit être un nombre valide supérieur à 0.",
-    });
-  }
-
+apiRoute.put(async (req: any, res: NextApiResponse) => {
   try {
-    // Calculer le nouveau total
-    const total = unitPrice * quantity;
+    const { id, description, unitPrice, quantity } = req.body;
 
-    // Mise à jour de la dépense
+    if (!id || !description || !unitPrice || !quantity) {
+      return res.status(400).json({ error: "Tous les champs sont obligatoires." });
+    }
+
+    if (
+      typeof description !== "string" ||
+      description.trim().length < 1 ||
+      description.trim().length > 30
+    ) {
+      return res.status(400).json({
+        error: "La description doit contenir entre 1 et 30 caractères.",
+      });
+    }
+
+    if (isNaN(Number(unitPrice)) || Number(unitPrice) <= 0) {
+      return res.status(400).json({
+        error: "Le prix unitaire doit être un nombre valide supérieur à 0.",
+      });
+    }
+
+    if (isNaN(Number(quantity)) || Number(quantity) <= 0) {
+      return res.status(400).json({
+        error: "La quantité doit être un nombre valide supérieur à 0.",
+      });
+    }
+
+    const total = Number(unitPrice) * Number(quantity);
+
+    const existingExpense = await prisma.expense.findUnique({
+      where: { id: parseInt(id, 10) },
+    });
+
+    if (!existingExpense) {
+      return res.status(404).json({ error: "Dépense introuvable." });
+    }
+
+    // Gérer le fichier uploadé
+    let newFilePath = existingExpense.invoiceFile;
+    if (req.file) {
+      const fileName = req.file.filename;
+      newFilePath = `/uploads/${fileName}`;
+
+      // Supprimer l'ancien fichier
+      if (existingExpense.invoiceFile) {
+        const oldFilePath = path.join("./public", existingExpense.invoiceFile);
+        if (fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
+        }
+      }
+    }
+
     const updatedExpense = await prisma.expense.update({
-      where: { id: typeof id === "string" ? parseInt(id, 10) : id }, // Identifier la dépense par son ID
+      where: { id: parseInt(id, 10) },
       data: {
         description: description.trim(),
-        unitPrice: parseFloat(unitPrice.toFixed(2)),
-        quantity, // Utilisez directement quantity
+        unitPrice: parseFloat(unitPrice),
+        quantity: parseInt(quantity, 10),
         total: parseFloat(total.toFixed(2)),
+        invoiceFile: newFilePath,
       },
     });
 
@@ -54,9 +122,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (error: any) {
     console.error("Erreur lors de la mise à jour de la dépense :", error);
-
     return res.status(500).json({
       error: "Erreur interne du serveur.",
     });
   }
-}
+});
+
+export const config = {
+  api: {
+    bodyParser: false, // Nécessaire pour Multer
+  },
+};
+
+export default apiRoute;
